@@ -164,6 +164,7 @@ class Player:
         self.health = 3
         self.shield_timer = 0
         self.rapid_fire_timer = 0
+        self.damage_cooldown = 0
 
     def move(self, dx):
         self.x += dx * self.speed
@@ -174,6 +175,9 @@ class Player:
         self.rect.x = self.x
 
     def draw(self, surface):
+        if self.damage_cooldown > 0 and self.damage_cooldown // 6 % 2 == 1:
+            return
+
         # Draw sleek spaceship
         points = [
             (self.x + self.width // 2, self.y),                      # Top tip
@@ -417,6 +421,8 @@ class Game:
             self.player.shield_timer -= 1
         if self.player.rapid_fire_timer > 0:
             self.player.rapid_fire_timer -= 1
+        if self.player.damage_cooldown > 0:
+            self.player.damage_cooldown -= 1
 
         if self.fire_cooldown > 0:
             self.fire_cooldown -= 1
@@ -454,11 +460,13 @@ class Game:
         if self.boss is not None:
             self.boss.update()
             if self.player.rect.colliderect(self.boss.rect):
-                if self.player.shield_timer > 0:
+                if self.player.shield_timer > 0 and self.player.damage_cooldown == 0:
                     self.player.shield_timer = 0
+                    self.player.damage_cooldown = 60
                     self.boss.hp = max(0, self.boss.hp - 2)
                     self.particle_sys.spawn(self.player.x + self.player.width // 2, self.player.y + self.player.height // 2, 20)
-                else:
+                elif self.player.damage_cooldown == 0:
+                    self.player.damage_cooldown = 60
                     self.player.health -= 1
                     self.particle_sys.spawn(self.player.x + self.player.width // 2, self.player.y + self.player.height // 2, 30)
                     if self.player.health <= 0:
@@ -500,18 +508,21 @@ class Game:
 
             # Meteor hits player
             if player_hitbox.colliderect(meteor.rect):
-                if self.player.shield_timer > 0:
+                if self.player.shield_timer > 0 and self.player.damage_cooldown == 0:
                     play_sound(SOUND_EXPLOSION)
                     self.particle_sys.spawn(meteor.x + meteor.size//2, meteor.y + meteor.size//2, 18)
                     self.meteors.remove(meteor)
                     self.player.shield_timer = 0
+                    self.player.damage_cooldown = 60
                     continue
 
                 play_sound(SOUND_EXPLOSION)
                 self.particle_sys.spawn(meteor.x + meteor.size//2, meteor.y + meteor.size//2, 30)
                 self.meteors.remove(meteor)
-                self.player.health -= 1
-                if self.player.health <= 0:
+                if self.player.damage_cooldown == 0:
+                    self.player.damage_cooldown = 60
+                    self.player.health -= 1
+                if self.player.health <= 0 and self.player.damage_cooldown == 60:
                     play_sound(SOUND_GAMEOVER)
                     if self.score > self.high_score:
                         self.high_score = self.score

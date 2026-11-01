@@ -24,6 +24,7 @@ COLOR_EXPLOSION = (250, 204, 21)    # Yellow
 COLOR_POWERUP = (52, 211, 153)      # Green Teal
 COLOR_POWERUP_ALT = (250, 204, 21)  # Gold for rapid
 COLOR_POWERUP_HEAL = (248, 113, 113) # Soft red/rose
+COLOR_BOSS = (99, 102, 241)          # Indigo boss color
 
 # ==========================================
 # AUDIO SYNTHESIS ENGINE
@@ -268,6 +269,35 @@ class PowerUp:
         text = pygame.font.SysFont("Consolas", 10, bold=True).render(label, True, (15, 15, 30))
         surface.blit(text, (center[0] - text.get_width() // 2, center[1] - text.get_height() // 2))
 
+class Boss:
+    def __init__(self):
+        self.width = 180
+        self.height = 70
+        self.x = random.randint(40, WINDOW_WIDTH - self.width - 40)
+        self.y = -self.height
+        self.speed = 2
+        self.direction = 1
+        self.max_hp = 12
+        self.hp = self.max_hp
+        self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
+
+    def update(self):
+        self.x += self.speed * self.direction
+        if self.x <= 20 or self.x >= WINDOW_WIDTH - self.width - 20:
+            self.direction *= -1
+            self.x = max(20, min(self.x, WINDOW_WIDTH - self.width - 20))
+        if self.y < 60:
+            self.y += 1.5
+        self.rect.x = int(self.x)
+        self.rect.y = int(self.y)
+
+    def draw(self, surface):
+        pygame.draw.rect(surface, COLOR_BOSS, self.rect)
+        pygame.draw.rect(surface, (255, 255, 255), self.rect, 3)
+        pygame.draw.rect(surface, (30, 30, 45), (self.x, self.y - 15, self.width, 8))
+        health_width = int((self.hp / self.max_hp) * self.width)
+        pygame.draw.rect(surface, (244, 63, 94), (self.x, self.y - 15, health_width, 8))
+
 # ==========================================
 # ENGINE GAME UTAMA
 # ==========================================
@@ -312,6 +342,8 @@ class Game:
         self.lasers = []
         self.meteors = []
         self.powerups = []
+        self.boss = None
+        self.boss_spawn_score = 100
         self.score = 0
         self.meteor_spawn_timer = 0
         self.powerup_spawn_timer = 0
@@ -390,10 +422,10 @@ class Game:
             self.fire_cooldown -= 1
         if keys[pygame.K_SPACE]:
             self.fire_laser()
-        
+
         if dx != 0:
             self.player.move(dx)
-            
+
         # Update Lasers
         for laser in self.lasers[:]:
             laser.update()
@@ -413,6 +445,38 @@ class Game:
         if self.powerup_spawn_timer >= 420:
             self.powerup_spawn_timer = 0
             self.powerups.append(PowerUp())
+
+        if self.boss is None and self.score >= self.boss_spawn_score:
+            self.boss = Boss()
+            self.boss_spawn_score += 100
+
+        # Update boss
+        if self.boss is not None:
+            self.boss.update()
+            if self.player.rect.colliderect(self.boss.rect):
+                if self.player.shield_timer > 0:
+                    self.player.shield_timer = 0
+                    self.boss.hp = max(0, self.boss.hp - 2)
+                    self.particle_sys.spawn(self.player.x + self.player.width // 2, self.player.y + self.player.height // 2, 20)
+                else:
+                    self.player.health -= 1
+                    self.particle_sys.spawn(self.player.x + self.player.width // 2, self.player.y + self.player.height // 2, 30)
+                    if self.player.health <= 0:
+                        play_sound(SOUND_GAMEOVER)
+                        if self.score > self.high_score:
+                            self.high_score = self.score
+                            self.save_highscore()
+                        self.state = "GAMEOVER"
+                        self.boss = None
+            for laser in self.lasers[:]:
+                if laser.rect.colliderect(self.boss.rect):
+                    self.boss.hp -= 1
+                    self.lasers.remove(laser)
+                    if self.boss.hp <= 0:
+                        self.particle_sys.spawn(self.boss.x + self.boss.width // 2, self.boss.y + self.boss.height // 2, 50)
+                        self.score += 100
+                        self.boss = None
+                        break
 
         # Update Power Ups
         for powerup in self.powerups[:]:
@@ -479,6 +543,8 @@ class Game:
                 meteor.draw(self.screen)
             for powerup in self.powerups:
                 powerup.draw(self.screen)
+            if self.boss is not None:
+                self.boss.draw(self.screen)
             self.particle_sys.draw(self.screen)
             if self.state == "PLAYING" or self.state == "PAUSED" or (self.state == "GAMEOVER" and self.player.health > 0):
                 self.player.draw(self.screen)
@@ -496,6 +562,9 @@ class Game:
             if self.player.rapid_fire_timer > 0:
                 rapid_txt = self.font_ui.render("RAPID FIRE", True, COLOR_POWERUP_ALT)
                 self.screen.blit(rapid_txt, (10, 70))
+            if self.boss is not None:
+                boss_txt = self.font_ui.render(f"BOSS HP: {self.boss.hp}/{self.boss.max_hp}", True, (255, 255, 255))
+                self.screen.blit(boss_txt, (WINDOW_WIDTH - 200, 40))
 
             if self.state == "PAUSED":
                 overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
